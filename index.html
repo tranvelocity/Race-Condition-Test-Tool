@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Race Condition Test Tool</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f7f7f7;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 700px;
+            margin: 40px auto;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            padding: 32px 24px 24px 24px;
+        }
+        h2 {
+            margin-top: 0;
+        }
+        label {
+            display: block;
+            margin: 16px 0 6px 0;
+            font-weight: bold;
+        }
+        input, select, textarea, button {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 8px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            font-size: 1em;
+        }
+        button {
+            background: #007bff;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 8px;
+        }
+        button:disabled {
+            background: #aaa;
+            cursor: not-allowed;
+        }
+        .results {
+            margin-top: 24px;
+            background: #f1f1f1;
+            border-radius: 6px;
+            padding: 16px;
+            max-height: 350px;
+            overflow-y: auto;
+            font-size: 0.97em;
+        }
+        .result-success { color: #218838; }
+        .result-error { color: #c82333; }
+        .result-status { font-weight: bold; }
+        .result-item { margin-bottom: 10px; border-bottom: 1px solid #e0e0e0; padding-bottom: 6px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h2>Race Condition Test Tool</h2>
+    <form id="raceForm" onsubmit="return false;">
+        <label for="url">API Endpoint URL</label>
+        <input type="url" id="url" required placeholder="https://your-api-endpoint">
+
+        <label for="apiKey">API Key</label>
+        <input type="text" id="apiKey" placeholder="API Key">
+
+        <label for="timestamp">Timestamp</label>
+        <input type="text" id="timestamp" placeholder="Timestamp (e.g. 20250630T120000Z)">
+
+        <label for="signature">Signature</label>
+        <input type="text" id="signature" placeholder="Signature">
+
+        <label for="method">HTTP Method</label>
+        <select id="method">
+            <option value="POST">POST</option>
+            <option value="GET">GET</option>
+            <option value="PUT">PUT</option>
+            <option value="DELETE">DELETE</option>
+        </select>
+
+        <label for="concurrency">Number of Concurrent Requests</label>
+        <input type="number" id="concurrency" min="1" max="100" value="10" required>
+
+        <label for="payload">Request Payload (JSON)</label>
+        <textarea id="payload" rows="5" placeholder='{"key": "value"}'></textarea>
+
+        <button id="startBtn" type="submit">Start Test</button>
+    </form>
+    <div class="results" id="results"></div>
+</div>
+<script>
+const form = document.getElementById('raceForm');
+const resultsDiv = document.getElementById('results');
+const startBtn = document.getElementById('startBtn');
+
+form.addEventListener('submit', async function() {
+    resultsDiv.innerHTML = '';
+    startBtn.disabled = true;
+    const url = document.getElementById('url').value;
+    const method = document.getElementById('method').value;
+    const concurrency = parseInt(document.getElementById('concurrency').value, 10);
+    const apiKey = document.getElementById('apiKey').value.trim();
+    const timestamp = document.getElementById('timestamp').value.trim();
+    const signature = document.getElementById('signature').value.trim();
+    let payload = document.getElementById('payload').value.trim();
+    let body = undefined;
+    if (payload && method !== 'GET') {
+        try {
+            body = JSON.stringify(JSON.parse(payload));
+        } catch (e) {
+            resultsDiv.innerHTML = '<span class="result-error">Invalid JSON payload.</span>';
+            startBtn.disabled = false;
+            return;
+        }
+    }
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiKey) headers['x-api-key'] = apiKey;
+    if (timestamp) headers['x-timestamp'] = timestamp;
+    if (signature) headers['x-signature'] = signature;
+    let promises = [];
+    for (let i = 0; i < concurrency; i++) {
+        promises.push(
+            fetch(url, {
+                method,
+                headers,
+                body: method !== 'GET' ? body : undefined
+            })
+            .then(async resp => {
+                let text = await resp.text();
+                let json = null;
+                try { json = JSON.parse(text); } catch {}
+                return {
+                    status: resp.status,
+                    ok: resp.ok,
+                    body: json || text
+                };
+            })
+            .catch(err => ({ status: 'ERR', ok: false, body: err.message }))
+        );
+    }
+    const allResults = await Promise.all(promises);
+    allResults.forEach((result, idx) => {
+        const statusClass = result.ok ? 'result-success' : 'result-error';
+        resultsDiv.innerHTML += `<div class="result-item"><span class="result-status ${statusClass}">[${idx+1}] Status: ${result.status}</span><br><pre>${typeof result.body === 'string' ? result.body : JSON.stringify(result.body, null, 2)}</pre></div>`;
+    });
+    startBtn.disabled = false;
+});
+</script>
+</body>
+</html>
